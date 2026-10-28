@@ -1,20 +1,24 @@
 # Used for objectives and solvers where no gradient is available/exists
-mutable struct NonDifferentiable{TF<:Union{AbstractArray,Real},TX<:AbstractArray} <: AbstractObjective
-    const f
+mutable struct NonDifferentiable{TF<:Union{AbstractArray,Real},TX<:AbstractArray,OF} <: AbstractObjective
+    const f::OF
     F::TF
     const x_f::TX
     f_calls::Int
 end
 
+# Preserve the existing two-parameter constructor.
+NonDifferentiable{TF,TX}(f,F,x,calls) where {TF,TX} =
+    NonDifferentiable{TF,TX,typeof(f)}(f,F,x,calls)
+
 # These could be the same if we could restrict g below not to be an AbstractArray
 function NonDifferentiable(f, x::AbstractArray, F::Real = real(eltype(x))(NaN); inplace = true)
     xnans = x_of_nans(x)
-    NonDifferentiable{typeof(F),typeof(xnans)}(f, F, xnans, 0)
+    NonDifferentiable{typeof(F),typeof(xnans),typeof(f)}(f, F, xnans, 0)
 end
 function NonDifferentiable(f, x::AbstractArray, F::AbstractArray; inplace = true)
     f = inplace ? f : f!_from_f(f, F, inplace)
     xnans = x_of_nans(x)
-    NonDifferentiable{typeof(F),typeof(xnans)}(f, F, xnans, 0)
+    NonDifferentiable{typeof(F),typeof(xnans),typeof(f)}(f, F, xnans, 0)
 end
 
 # this is the g referred to above!
