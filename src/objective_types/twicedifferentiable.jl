@@ -1,14 +1,14 @@
 # Used for objectives and solvers where the gradient and Hessian is available/exists
-mutable struct TwiceDifferentiable{T<:Real,TDF<:AbstractArray,TJVP<:Number,TH<:AbstractMatrix,THVP<:AbstractArray,TX<:AbstractArray} <: AbstractObjective
-    const f
-    const df
-    const fdf
-    const jvp # Jacobian-vector product of objective
-    const fjvp # objective and Jacobian-vector product of objective
-    const dfh
-    const fdfh
-    const h
-    const hv
+mutable struct TwiceDifferentiable{T<:Real,TDF<:AbstractArray,TJVP<:Number,TH<:AbstractMatrix,THVP<:AbstractArray,TX<:AbstractArray,OF,ODF,OFDF,OJVP,OFJVP,ODFH,OFDFH,OH,OHV} <: AbstractObjective
+    const f::OF
+    const df::ODF
+    const fdf::OFDF
+    const jvp::OJVP # Jacobian-vector product of objective
+    const fjvp::OFJVP # objective and Jacobian-vector product of objective
+    const dfh::ODFH
+    const fdfh::OFDFH
+    const h::OH
+    const hv::OHV
     F::T
     const DF::TDF
     JVP::TJVP
@@ -27,9 +27,12 @@ mutable struct TwiceDifferentiable{T<:Real,TDF<:AbstractArray,TJVP<:Number,TH<:A
     h_calls::Int
     hvp_calls::Int
 end
+function TwiceDifferentiable{T,TDF,TJVP,TH,THVP,TX}(f,df,fdf,jvp,fjvp,dfh,fdfh,h,hv,args::Vararg{Any,K}) where {T,TDF,TJVP,TH,THVP,TX,K}
+    TwiceDifferentiable{T,TDF,TJVP,TH,THVP,TX,typeof(f),typeof(df),typeof(fdf),typeof(jvp),typeof(fjvp),typeof(dfh),typeof(fdfh),typeof(h),typeof(hv)}(f,df,fdf,jvp,fjvp,dfh,fdfh,h,hv,args...)
+end
 
 # compatibility with old constructor
-function TwiceDifferentiable(f, g, fg, h, x::TX, F::T = real(eltype(x))(NaN), G::TG = alloc_DF(x, F), H::TH = alloc_H(x, F); inplace::Bool = true) where {T<:Real, TG<:AbstractArray, TH<:AbstractMatrix, TX<:AbstractArray}
+function TwiceDifferentiable(f::FN0, g, fg, h, x::TX, F::T = real(eltype(x))(NaN), G::TG = alloc_DF(x, F), H::TH = alloc_H(x, F); inplace::Bool = true) where {FN0,T<:Real, TG<:AbstractArray, TH<:AbstractMatrix, TX<:AbstractArray}
     g! = df!_from_df(g, F, inplace)
     fg! = fdf!_from_fdf(fg, F, inplace)
     h! = h!_from_h(h, F, inplace)
@@ -52,11 +55,11 @@ function TwiceDifferentiable(f, g, fg, h, x::TX, F::T = real(eltype(x))(NaN), G:
                                         0, 0, 0, 0, 0)
 end
 
-function TwiceDifferentiable(f, g, h,
+function TwiceDifferentiable(f::FN0, g, h,
                              x::AbstractArray,
                              F::Real = real(eltype(x))(NaN),
                              G::AbstractArray = alloc_DF(x, F),
-                             H::AbstractMatrix = alloc_H(x, F); inplace = true)
+                             H::AbstractMatrix = alloc_H(x, F); inplace = true) where {FN0}
     g! = df!_from_df(g, F, inplace)
     fg! = make_fdf(x, F, f, g!)
     h! = h!_from_h(h, F, inplace)
@@ -76,11 +79,11 @@ end
 
 
 
-function TwiceDifferentiable(f, g,
+function TwiceDifferentiable(f::FN0, g,
                              x_seed::AbstractArray,
                              F::Real = real(eltype(x_seed))(NaN);
                              inplace::Bool = true,
-                             autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
+                             autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central))) where {FN0}
     g! = df!_from_df(g, F, inplace)
     fg! = make_fdf(x_seed, F, f, g!)
 
@@ -165,9 +168,9 @@ function TwiceDifferentiable(d::OnceDifferentiable,
     return TwiceDifferentiable(d.f, d.df, d.fdf, nothing, nothing, dfh!, fdfh!, h!, hvp!, F, alloc_DF(x_seed, F), F, alloc_H(x_seed, F), alloc_DF(x_seed, F), x_f, x_df, x_jvp, v_jvp, x_h, x_hvp, v_hvp, 0, 0, 0, 0, 0)
 end
 
-function TwiceDifferentiable(f, x::AbstractArray, F::Real = real(eltype(x))(NaN);
+function TwiceDifferentiable(f::FN0, x::AbstractArray, F::Real = real(eltype(x))(NaN);
                              inplace::Bool = true,
-                             autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
+                             autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central))) where {FN0}
     x_prep = x_of_values(x)
 
     grad_prep = DI.prepare_gradient(f, autodiff, x_prep)

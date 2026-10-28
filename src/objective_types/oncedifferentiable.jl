@@ -1,10 +1,10 @@
 # Used for objectives and solvers where the gradient is available/exists
-mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractArray, TJVP<:Union{AbstractArray,Number}, TX<:AbstractArray} <: AbstractObjective
-    const f # objective
-    const df # (partial) derivative of objective
-    const fdf # objective and (partial) derivative of objective
-    const jvp # Jacobian-vector product of objective
-    const fjvp # objective and Jacobian-vector product of objective
+mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractArray, TJVP<:Union{AbstractArray,Number}, TX<:AbstractArray,OF,ODF,OFDF,OJVP,OFJVP} <: AbstractObjective
+    const f::OF # objective
+    const df::ODF # (partial) derivative of objective
+    const fdf::OFDF # objective and (partial) derivative of objective
+    const jvp::OJVP # Jacobian-vector product of objective
+    const fjvp::OFJVP # objective and Jacobian-vector product of objective
     F::TF # cache for f output
     const DF::TDF # cache for df output
     JVP::TJVP # cache for jvp output
@@ -16,28 +16,31 @@ mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractAr
     df_calls::Int
     jvp_calls::Int
 end
+function OnceDifferentiable{TF,TDF,TJVP,TX}(f,df,fdf,jvp,fjvp,args::Vararg{Any,K}) where {TF,TDF,TJVP,TX,K}
+    OnceDifferentiable{TF,TDF,TJVP,TX,typeof(f),typeof(df),typeof(fdf),typeof(jvp),typeof(fjvp)}(f,df,fdf,jvp,fjvp,args...)
+end
 
 ### Only the objective
 # Ambiguity
-function OnceDifferentiable(f, x::AbstractArray,
+function OnceDifferentiable(f::FN0, x::AbstractArray,
                    F::Real = real(eltype(x))(NaN),
                    DF::AbstractArray = alloc_DF(x, F);
                    inplace::Bool = true,
-                   autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
+                   autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central))) where {FN0}
     OnceDifferentiable(f, x, F, DF, autodiff)
 end
-function OnceDifferentiable(f, x::AbstractArray,
+function OnceDifferentiable(f::FN0, x::AbstractArray,
                    F::AbstractArray, DF::AbstractArray = alloc_DF(x, F);
                    inplace::Bool = true,
-                   autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
+                   autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central))) where {FN0}
     f! = f!_from_f(f, F, inplace)
     OnceDifferentiable(f!, x, F, DF, autodiff)
 end
 
-function OnceDifferentiable(f, x_seed::AbstractArray,
+function OnceDifferentiable(f::FN0, x_seed::AbstractArray,
                             F::Real,
                             DF::AbstractArray,
-                            autodiff::AbstractADType)
+                            autodiff::AbstractADType) where {FN0}
     x_f = x_of_nans(x_seed)
     x_df = x_of_nans(x_seed)
     x_jvp = x_of_nans(x_seed)
@@ -77,10 +80,10 @@ end
 
 OnceDifferentiable(f, x::AbstractArray, F::AbstractArray, autodiff::AbstractADType) =
     OnceDifferentiable(f, x, F, alloc_DF(x, F), autodiff)
-function OnceDifferentiable(f, x_seed::AbstractArray,
+function OnceDifferentiable(f::FN0, x_seed::AbstractArray,
                             F::AbstractArray,
                             DF::AbstractArray,
-                            autodiff::AbstractADType)
+                            autodiff::AbstractADType) where {FN0}
 
     x_f = x_of_nans(x_seed)
     x_df = x_of_nans(x_seed)
@@ -118,11 +121,11 @@ function OnceDifferentiable(f, x_seed::AbstractArray,
 end
 
 ### Objective and derivative
-function OnceDifferentiable(f, df,
+function OnceDifferentiable(f::FN0, df,
                    x::AbstractArray,
                    F::Real = real(eltype(x))(NaN),
                    DF::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true)
+                   inplace::Bool = true) where {FN0}
 
 
     df! = df!_from_df(df, F, inplace)
@@ -132,11 +135,11 @@ function OnceDifferentiable(f, df,
     OnceDifferentiable(f, df!, fdf!, x, F, DF)
 end
 
-function OnceDifferentiable(f, j,
+function OnceDifferentiable(f::FN0, j,
                    x::AbstractArray,
                    F::AbstractArray,
                    J::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true)
+                   inplace::Bool = true) where {FN0}
 
     f! = f!_from_f(f, F, inplace)
     j! = df!_from_df(j, F, inplace)
@@ -147,11 +150,11 @@ end
 
 
 ### Objective, derivative and combination
-function OnceDifferentiable(f, df, fdf,
+function OnceDifferentiable(f::FN0, df, fdf,
     x::AbstractArray,
     F::Real = real(eltype(x))(NaN),
     DF::AbstractArray = alloc_DF(x, F);
-    inplace::Bool = true)
+    inplace::Bool = true) where {FN0}
 
     # f is never "inplace" since F is scalar
     df! = df!_from_df(df, F, inplace)
@@ -170,11 +173,11 @@ function OnceDifferentiable(f, df, fdf,
     0, 0, 0)
 end
 
-function OnceDifferentiable(f, df, fdf,
+function OnceDifferentiable(f::FN0, df, fdf,
                             x::AbstractArray,
                             F::AbstractArray,
                             DF::AbstractArray = alloc_DF(x, F);
-                            inplace::Bool = true)
+                            inplace::Bool = true) where {FN0}
 
     f = f!_from_f(f, F, inplace)
     df! = df!_from_df(df, F, inplace)
