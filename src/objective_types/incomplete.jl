@@ -324,17 +324,17 @@ make_jvp(::NotInplaceObjective, ::AbstractArray, ::Union{Real,AbstractArray}) = 
 make_fjvp(::NotInplaceObjective, ::AbstractArray, ::Union{Real,AbstractArray}) = nothing
 
 # Constructors
-function NonDifferentiable(t::Union{InplaceObjective, NotInplaceObjective}, x::AbstractArray, F::Real = real(eltype(x))(NaN))
+Base.@constprop :aggressive function NonDifferentiable(t::Union{InplaceObjective, NotInplaceObjective}, x::AbstractArray, F::Real = real(eltype(x))(NaN); specialize::Bool = false)
     f = make_f(t, x, F)
-    NonDifferentiable(f, x, F)
+    NonDifferentiable(f, x, F; specialize)
 end
 # this would not be possible if we could mark f, g, ... as non-AbstractArrays
-function NonDifferentiable(t::Union{InplaceObjective, NotInplaceObjective}, x::AbstractArray, F::AbstractArray)
+Base.@constprop :aggressive function NonDifferentiable(t::Union{InplaceObjective, NotInplaceObjective}, x::AbstractArray, F::AbstractArray; specialize::Bool = false)
     f = make_f(t, x, F)
-    NonDifferentiable(f, x, F)
+    NonDifferentiable(f, x, F; specialize)
 end
 
-function TwiceDifferentiable(t::InplaceObjective, x::AbstractArray, F::Real = real(eltype(x))(NaN), G::AbstractArray = alloc_DF(x, F), H::AbstractMatrix = alloc_H(x, F))
+Base.@constprop :aggressive function TwiceDifferentiable(t::InplaceObjective, x::AbstractArray, F::Real = real(eltype(x))(NaN), G::AbstractArray = alloc_DF(x, F), H::AbstractMatrix = alloc_H(x, F); specialize::Bool = false)
     f   = make_f(t, x, F)
     df  = make_df(t, x, F)
     fdf = make_fdf(t, x, F)
@@ -356,5 +356,5 @@ function TwiceDifferentiable(t::InplaceObjective, x::AbstractArray, F::Real = re
     TwiceDifferentiable(f, df, fdf, jvp, fjvp, dfh, fdfh, h, hv,
                                         copy(F), copy(G), alloc_JVP(x, F), copy(H), copy(G),
                                         x_f, x_df, x_jvp, v_jvp, x_h, x_hvp, v_hvp,
-                                        0, 0, 0, 0, 0)
+                                        0, 0, 0, 0, 0; specialize)
 end

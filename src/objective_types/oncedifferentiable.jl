@@ -1,10 +1,10 @@
 # Used for objectives and solvers where the gradient is available/exists
-mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractArray, TJVP<:Union{AbstractArray,Number}, TX<:AbstractArray} <: AbstractObjective
-    const f # objective
-    const df # (partial) derivative of objective
-    const fdf # objective and (partial) derivative of objective
-    const jvp # Jacobian-vector product of objective
-    const fjvp # objective and Jacobian-vector product of objective
+mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractArray, TJVP<:Union{AbstractArray,Number}, TX<:AbstractArray,F_f,F_df,F_fdf,F_jvp,F_fjvp} <: AbstractObjective
+    const f::F_f # objective
+    const df::F_df # (partial) derivative of objective
+    const fdf::F_fdf # objective and (partial) derivative of objective
+    const jvp::F_jvp # Jacobian-vector product of objective
+    const fjvp::F_fjvp # objective and Jacobian-vector product of objective
     F::TF # cache for f output
     const DF::TDF # cache for df output
     JVP::TJVP # cache for jvp output
@@ -15,29 +15,30 @@ mutable struct OnceDifferentiable{TF<:Union{AbstractArray,Real}, TDF<:AbstractAr
     f_calls::Int
     df_calls::Int
     jvp_calls::Int
+    OnceDifferentiable{TF,TDF,TJVP,TX,F_f,F_df,F_fdf,F_jvp,F_fjvp}(args::Vararg{Any,15}) where {TF,TDF,TJVP,TX,F_f,F_df,F_fdf,F_jvp,F_fjvp} = new{TF,TDF,TJVP,TX,F_f,F_df,F_fdf,F_jvp,F_fjvp}(args...)
 end
 
 ### Only the objective
 # Ambiguity
-function OnceDifferentiable(f, x::AbstractArray,
+Base.@constprop :aggressive function OnceDifferentiable(f, x::AbstractArray,
                    F::Real = real(eltype(x))(NaN),
                    DF::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true,
+                   inplace::Bool = true, specialize::Bool = false,
                    autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
-    OnceDifferentiable(f, x, F, DF, autodiff)
+    OnceDifferentiable(f, x, F, DF, autodiff; specialize)
 end
-function OnceDifferentiable(f, x::AbstractArray,
+Base.@constprop :aggressive function OnceDifferentiable(f, x::AbstractArray,
                    F::AbstractArray, DF::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true,
+                   inplace::Bool = true, specialize::Bool = false,
                    autodiff::AbstractADType = AutoFiniteDiff(; fdtype = Val(:central)))
     f! = f!_from_f(f, F, inplace)
-    OnceDifferentiable(f!, x, F, DF, autodiff)
+    OnceDifferentiable(f!, x, F, DF, autodiff; specialize)
 end
 
-function OnceDifferentiable(f, x_seed::AbstractArray,
+Base.@constprop :aggressive function OnceDifferentiable(f, x_seed::AbstractArray,
                             F::Real,
                             DF::AbstractArray,
-                            autodiff::AbstractADType)
+                            autodiff::AbstractADType; specialize::Bool = false)
     x_f = x_of_nans(x_seed)
     x_df = x_of_nans(x_seed)
     x_jvp = x_of_nans(x_seed)
@@ -53,7 +54,7 @@ function OnceDifferentiable(f, x_seed::AbstractArray,
         jvpF = make_jvp(f, x_seed, F)
         fjvpF = make_fjvp(f, x_seed, F)
 
-        return OnceDifferentiable(fF, dfF, fdfF, jvpF, fjvpF, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0)
+        return OnceDifferentiable(fF, dfF, fdfF, jvpF, fjvpF, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0; specialize)
     else
         grad_prep = DI.prepare_gradient(f, autodiff, x_of_values(x_seed))
         g! = let f = f, grad_prep = grad_prep, autodiff = autodiff
@@ -71,16 +72,16 @@ function OnceDifferentiable(f, x_seed::AbstractArray,
         # TODO: Define dedicated AD-based functions for JVPs as well
         # Currently, this is disabled as it can lead to inconsistencies with gradient calculations with finite differencing (default)
         # We probably need a more fine-grained way for choosing AD backends, as JVP is a prime candidate for forward-mode AD
-        return OnceDifferentiable(f, g!, fg!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0)
+        return OnceDifferentiable(f, g!, fg!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0; specialize)
     end
 end
 
-OnceDifferentiable(f, x::AbstractArray, F::AbstractArray, autodiff::AbstractADType) =
-    OnceDifferentiable(f, x, F, alloc_DF(x, F), autodiff)
-function OnceDifferentiable(f, x_seed::AbstractArray,
+Base.@constprop :aggressive OnceDifferentiable(f, x::AbstractArray, F::AbstractArray, autodiff::AbstractADType; specialize::Bool = false) =
+    OnceDifferentiable(f, x, F, alloc_DF(x, F), autodiff; specialize)
+Base.@constprop :aggressive function OnceDifferentiable(f, x_seed::AbstractArray,
                             F::AbstractArray,
                             DF::AbstractArray,
-                            autodiff::AbstractADType)
+                            autodiff::AbstractADType; specialize::Bool = false)
 
     x_f = x_of_nans(x_seed)
     x_df = x_of_nans(x_seed)
@@ -94,7 +95,7 @@ function OnceDifferentiable(f, x_seed::AbstractArray,
         jvpF = make_jvp(f, x_seed, F)
         fjvpF = make_fjvp(f, x_seed, F)
 
-        return OnceDifferentiable(fF, dfF, fdfF, jvpF, fjvpF, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0)
+        return OnceDifferentiable(fF, dfF, fdfF, jvpF, fjvpF, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0; specialize)
     else
         F2 = similar(F)
         jac_prep = DI.prepare_jacobian(f, F2, autodiff, x_of_values(x_seed))
@@ -113,45 +114,45 @@ function OnceDifferentiable(f, x_seed::AbstractArray,
         # TODO: Define dedicated AD-based functions for JVPs as well
         # Currently, this is disabled as it can lead to inconsistencies with gradient calculations with finite differencing (default)
         # We probably need a more fine-grained way for choosing AD backends, as JVP is a prime candidate for forward-mode AD
-        return OnceDifferentiable(f, j!, fj!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0)
+        return OnceDifferentiable(f, j!, fj!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x_seed, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0; specialize)
     end
 end
 
 ### Objective and derivative
-function OnceDifferentiable(f, df,
+Base.@constprop :aggressive function OnceDifferentiable(f, df,
                    x::AbstractArray,
                    F::Real = real(eltype(x))(NaN),
                    DF::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true)
+                   inplace::Bool = true, specialize::Bool = false)
 
 
     df! = df!_from_df(df, F, inplace)
 
     fdf! = make_fdf(x, F, f, df!)
 
-    OnceDifferentiable(f, df!, fdf!, x, F, DF)
+    OnceDifferentiable(f, df!, fdf!, x, F, DF; specialize)
 end
 
-function OnceDifferentiable(f, j,
+Base.@constprop :aggressive function OnceDifferentiable(f, j,
                    x::AbstractArray,
                    F::AbstractArray,
                    J::AbstractArray = alloc_DF(x, F);
-                   inplace::Bool = true)
+                   inplace::Bool = true, specialize::Bool = false)
 
     f! = f!_from_f(f, F, inplace)
     j! = df!_from_df(j, F, inplace)
     fj! = make_fdf(x, F, f!, j!)
 
-    OnceDifferentiable(f!, j!, fj!, x, F, J)
+    OnceDifferentiable(f!, j!, fj!, x, F, J; specialize)
 end
 
 
 ### Objective, derivative and combination
-function OnceDifferentiable(f, df, fdf,
+Base.@constprop :aggressive function OnceDifferentiable(f, df, fdf,
     x::AbstractArray,
     F::Real = real(eltype(x))(NaN),
     DF::AbstractArray = alloc_DF(x, F);
-    inplace::Bool = true)
+    inplace::Bool = true, specialize::Bool = false)
 
     # f is never "inplace" since F is scalar
     df! = df!_from_df(df, F, inplace)
@@ -167,14 +168,14 @@ function OnceDifferentiable(f, df, fdf,
     OnceDifferentiable{typeof(F),typeof(DF),typeof(JVP),typeof(x)}(f, df!, fdf!, nothing, nothing,
     copy(F), copy(DF), JVP,
     x_f, x_df, x_jvp, v_jvp,
-    0, 0, 0)
+    0, 0, 0; specialize)
 end
 
-function OnceDifferentiable(f, df, fdf,
+Base.@constprop :aggressive function OnceDifferentiable(f, df, fdf,
                             x::AbstractArray,
                             F::AbstractArray,
                             DF::AbstractArray = alloc_DF(x, F);
-                            inplace::Bool = true)
+                            inplace::Bool = true, specialize::Bool = false)
 
     f = f!_from_f(f, F, inplace)
     df! = df!_from_df(df, F, inplace)
@@ -185,5 +186,25 @@ function OnceDifferentiable(f, df, fdf,
     x_jvp = x_of_nans(x)
     v_jvp = x_of_nans(x)
 
-    OnceDifferentiable(f, df!, fdf!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0)
+    OnceDifferentiable(f, df!, fdf!, nothing, nothing, copy(F), copy(DF), alloc_JVP(x, F), x_f, x_df, x_jvp, v_jvp, 0, 0, 0; specialize)
+end
+
+# Callable specialization is opt-in to preserve today's interactive latency and
+# Any-valued callable layout. `specialize=true` is useful for static compilation.
+Base.@constprop :aggressive function OnceDifferentiable(
+        f::C0, df::C1, fdf::C2, jvp::C3, fjvp::C4,
+        F::TF, DF::TDF, JVP::TJVP, x_f::TX, x_df::TX, x_jvp::TX, v_jvp::TX, f_calls::Int, df_calls::Int, jvp_calls::Int; specialize::Bool = false) where {TF<:Union{AbstractArray,Real}, TDF<:AbstractArray, TJVP<:Union{AbstractArray,Number}, TX<:AbstractArray, C0, C1, C2, C3, C4}
+    _construct_oncedifferentiable(Val(specialize), TF, TDF, TJVP, TX, f, df, fdf, jvp, fjvp, F, DF, JVP, x_f, x_df, x_jvp, v_jvp, f_calls, df_calls, jvp_calls)
+end
+
+function _construct_oncedifferentiable(::Val{S}, ::Type{TF}, ::Type{TDF}, ::Type{TJVP}, ::Type{TX},
+        f::C0, df::C1, fdf::C2, jvp::C3, fjvp::C4, F, DF, JVP, x_f, x_df, x_jvp, v_jvp, f_calls, df_calls, jvp_calls) where {S, TF, TDF, TJVP, TX, C0, C1, C2, C3, C4}
+    OnceDifferentiable{TF, TDF, TJVP, TX, S ? C0 : Any, S ? C1 : Any, S ? C2 : Any, S ? C3 : Any, S ? C4 : Any}(
+        f, df, fdf, jvp, fjvp, F, DF, JVP, x_f, x_df, x_jvp, v_jvp, f_calls, df_calls, jvp_calls)
+end
+
+# Retain the original partially parameterized all-fields construction API.
+Base.@constprop :aggressive function OnceDifferentiable{TF, TDF, TJVP, TX}(
+        f::C0, df::C1, fdf::C2, jvp::C3, fjvp::C4, F, DF, JVP, x_f, x_df, x_jvp, v_jvp, f_calls, df_calls, jvp_calls; specialize::Bool = false) where {TF, TDF, TJVP, TX, C0, C1, C2, C3, C4}
+    _construct_oncedifferentiable(Val(specialize), TF, TDF, TJVP, TX, f, df, fdf, jvp, fjvp, F, DF, JVP, x_f, x_df, x_jvp, v_jvp, f_calls, df_calls, jvp_calls)
 end

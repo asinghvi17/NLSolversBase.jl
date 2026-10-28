@@ -93,3 +93,34 @@ end
     @test value!(fa1, xr) ≈ value!(fia1, xr) ≈ value!(fia2, xr) ≈ value!(fia3, xr)
     @test jacobian!(fa1, xr) ≈ jacobian!(fia1, xr) ≈ jacobian!(fia2, xr) ≈ jacobian!(fia3, xr)
 end
+
+@testset "callable specialization is opt-in" begin
+    f(x) = sum(abs2, x)
+    g!(g, x) = (g .= 2 .* x; nothing)
+    fg!(g, x) = (g!(g, x); f(x))
+    h!(h, x) = (copyto!(h, 2I); nothing)
+    x = [1.0, 2.0]
+    for specialize in (false, true)
+        for d in (NonDifferentiable(f, x; specialize),
+                  OnceDifferentiable(f, g!, fg!, x; specialize),
+                  TwiceDifferentiable(f, g!, fg!, h!, x; specialize))
+            for field in (:f, :df, :fdf, :jvp, :fjvp, :dfh, :fdfh, :h, :hv)
+                hasfield(typeof(d), field) || continue
+                @test fieldtype(typeof(d), field) ===
+                    (specialize ? typeof(getfield(d, field)) : Any)
+            end
+            @test value!(d, x) == 5.0
+        end
+    end
+    for d in (NonDifferentiable(f, x), OnceDifferentiable(f, g!, fg!, x),
+              TwiceDifferentiable(f, g!, fg!, h!, x))
+        @test fieldtype(typeof(d), :f) === Any
+    end
+    # @inferred on the wrapper checks the literal Bool, rather than its type alone.
+    make_nd(z) = NonDifferentiable(f, z; specialize = true)
+    make_od(z) = OnceDifferentiable(f, g!, fg!, z; specialize = true)
+    make_td(z) = TwiceDifferentiable(f, g!, fg!, h!, z; specialize = true)
+    @test fieldtype(typeof(@inferred(make_nd(x))), :f) === typeof(f)
+    @test fieldtype(typeof(@inferred(make_od(x))), :f) === typeof(f)
+    @test fieldtype(typeof(@inferred(make_td(x))), :f) === typeof(f)
+end
